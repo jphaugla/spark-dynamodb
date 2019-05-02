@@ -165,3 +165,15 @@ use this mvn command
 ```bash
 mvn install -DskipTests -Dgpg.skip
 ```
+
+Can test spark shell using jar-with-dependencies file using spark 2.4.0
+
+```bash
+./spark-shell --jars=/Users/jasonhaugland/gits/spark-dynamodb/target/spark-dynamodb-0.0.14-SNAPSHOT-jar-with-dependencies.jar --packages datastax:spark-cassandra-connector:2.4.0-s_2.11
+import com.datastax.spark.connector._
+import org.apache.spark.sql.cassandra._
+import com.github.traviscrawford.spark.dynamodb._
+val jph_test = spark.read.dynamodb("JPH_test")
+jph_test.show();
+jph_test.write.cassandraFormat("jph_test","testks").save()
+```
