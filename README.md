@@ -156,3 +156,12 @@ flags:
 ```
 
 To integrate with your own code, see `DynamoScanner`.
+
+This fork by jphaugla is to update the version for spark 2.4 and AWS SDK 1.11.519
+
+To allow this to work with a local machine the pom.xml file was changed to create a with-dependencies jar file as well as to do an install.
+
+use this mvn command
+```bash
+mvn install -DskipTests -Dgpg.skip
+```
