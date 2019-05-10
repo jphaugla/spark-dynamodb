@@ -12,18 +12,27 @@ import com.datastax.driver.core.exceptions.AlreadyExistsException
 
 import java.net.URI
 
-import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClientBuilder
-
-import scala.collection.mutable.ListBuffer
-import scala.util.control.NonFatal
 
 
-
-/** Backup a DynamoDB table as JSON.
+/** Copy a DynamoDB table to Cassandra.
   *
-  * The full table is scanned and the results are stored in the given output path.
+  * The full table is scanned and the results are stored in the a Cassandra Table that is created
+  * if it does not exist.
+  * * @param tableName        Name of the DynamoDB table to scan.
+  * * @param maybePageSize    DynamoDB request page size.
+  * * @param maybeSegments    Number of segments to scan the table with.
+  * * @param maybeRateLimit   Max number of read capacity units per second each scan segment
+  * *                         will consume from the DynamoDB table.
+  * * @param maybeRegion      AWS region of the table to scan.
+  * * @param maybeSchema      Schema of the DynamoDB table.
+  * * @param maybeCredentials By default, [[com.amazonaws.auth.DefaultAWSCredentialsProviderChain]]
+  * *                         will be used, which, which will work for most users. If you have a
+  * *                         custom credentials provider it can be provided here.
+  * * @param maybeEndpoint    Endpoint to connect to DynamoDB on. This is intended for tests.
+  * * @see http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/QueryAndScanGuidelines.html
+  *
   */
-object DynamoGetRDD extends Job {
+object DynamoToCassandra extends Job {
   private val region = flag[String]("region", "Region of the DynamoDB table to scan.")
   private val endpoint = flag[String]("endpoint", "Endpoint of the DynamoDB table to scan.")
 
@@ -34,9 +43,6 @@ object DynamoGetRDD extends Job {
 
   private val pageSize = flag("pageSize", "1000", "Page size of each DynamoDB request.")
 
-  private val output = flag[String]("output", "Path to write the DynamoDB table backup.")
-
-  private val overwrite = flag("overwrite", false, "Set to true to overwrite output path.")
 
   private val credentials = flag[String]("credentials",
     "Optional AWS credentials provider class name.")
@@ -44,38 +50,6 @@ object DynamoGetRDD extends Job {
   private val rateLimit = flag[Int]("rateLimit",
     "Max number of read capacity units per second each scan segment will consume.")
 
-  def getKeys(table_name: String): List[String] = {
-    log.info("Getting description for %s\n\n", table_name)
-    val ddb = AmazonDynamoDBClientBuilder.defaultClient
-    var keyList = new ListBuffer[String]()
-    try {
-      val table_info = ddb.describeTable(table_name).getTable
-      val keyschema = table_info.getKeySchema()
-      log.info("Keys")
-      import scala.collection.JavaConversions._
-      for (k <- keyschema) {
-        log.info(k.getAttributeName + "(" + k.getKeyType + ")\n")
-        keyList += k.getAttributeName
-      }
-
-    } catch {
-      case NonFatal(err) =>
-        log.error(s"Failed getting key table information for: ${table_name}", err)
-    }
-    log.info("\nDone!")
-    (keyList.toList)
-  }
-/*
- def getSchema (table_name: String): TableSchema = {
-    val scanSpec = new ScanSpec().withMaxPageSize(pageSize)
-    val result = Table.scan(scanSpec)
-    val json = result.firstPage().iterator().map(_.toJSON)
-    import sqlContext.implicits._  // scalastyle:ignore
-    val jsonDS = sqlContext.sparkContext.parallelize(json.toSeq).toDS()
-    val jsonDF = sqlContext.read.json(jsonDS)
-    jsonDF.schema
-  }
-*/
   def run(): Unit = {
     val maybeCredentials = if (credentials.isDefined) Some(credentials()) else None
     val maybeTableName = if (tableName.isDefined) Some(tableName()) else None
@@ -84,7 +58,9 @@ object DynamoGetRDD extends Job {
     val maybeTotalSegments = if (totalSegments.isDefined) Some(totalSegments()) else None
     val maybePageSize = if (pageSize.isDefined) Some(pageSize()) else None
     val maybeFilterExpression =  None
-    val schemais =
+    // Infer schema with JSONRelation for simplicity.
+    val schemais = DynamoScannerRDD.getSchema(spark,pageSize().toInt,tableName())
+    /* example of defining own schema val schemais =
       StructType(
         Array(
           StructField("hash_key", LongType),
@@ -93,17 +69,20 @@ object DynamoGetRDD extends Job {
           StructField("puppy_count", LongType)
         )
       )
+      */
     val maybeSchema =  Some(schemais)
     val awsAccessKey = None
     val awsSecretKey = None
     val maybeEndpoint = if (endpoint.isDefined) Some(endpoint()) else None
+    //   get RDD back for all the Dynamo records in the table
     val returnRDD = DynamoScannerRDD(spark, tableName(), maybeFilterExpression, maybePageSize, maybeTotalSegments, maybeRateLimit,
       maybeRegion, maybeSchema, maybeCredentials, awsAccessKey, awsSecretKey,   maybeEndpoint)
-    import spark.implicits._
+    import spark.implicits._   // scalastyle:ignore
     val returnDF = spark.createDataFrame(returnRDD,schemais)
     returnDF.printSchema()
-    returnDF.show(5)
-    val keycols = getKeys(tableName())
+    // returnDF.show(5)
+    //   retrieve the key columns for amazon table.  All tables will have a hash_key, sort_key is optional
+    val keycols = DynamoScannerRDD.getKeys(tableName())
     log.info(s"print key columns")
     keycols.foreach {println}
     //  hash_key is always first
@@ -126,7 +105,7 @@ object DynamoGetRDD extends Job {
     val newDF = returnDF.withColumn("structure",expr(expressString))
       .withColumn("json_blob", expr("to_json(structure)"))
     //  this show causes breakage on long to string conversion
-    newDF.show(2)
+    // newDF.show(2)
     newDF.printSchema()
     //  Only need to write out the three columns
     var writeDF  = spark.emptyDataFrame

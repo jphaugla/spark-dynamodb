@@ -35,19 +35,8 @@ object DynamoScannerRDD extends BaseScanner
 {
 
   private val log = LoggerFactory.getLogger(this.getClass)
-  // (@transient val sqlContext: SQLContext)
-  // Infer schema with JSONRelation for simplicity. A future improvement would be
-  // directly processing the scan result set.
-
-
-
-
-  /** Get the relation schema.
-    *
-    * The user-defined schema will be used, if provided. Otherwise the schema is inferred
-    * from one page of items scanned from the DynamoDB tableName.
-    */
-
+//  this is main program entry point
+  //    passing in spark session and table name to return an RDD
   def apply(   spark: SparkSession,
                tableName: String,
                      maybeFilterExpression: Option[String],
@@ -65,16 +54,8 @@ object DynamoScannerRDD extends BaseScanner
 
     val Segments = Integer.parseInt(maybeSegments.getOrElse("1"))
 
-    val emptyArray =  Array.empty[String]
 
-    /* val scanSpec = new ScanSpec().withMaxPageSize(pageSize)
-    val result = Table.scan(scanSpec)
-    val json = result.firstPage().iterator().map(_.toJSON)
-    import sc.sqlContext.implicits._  // scalastyle:ignore
-    val jsonDS = sc.sqlContext.sparkContext.parallelize(json.toSeq).toDS()
-    val jsonDF = sc.sqlContext.read.json(jsonDS)
-    val schema = jsonDF.schema
-    */
+    val emptyArray =  Array.empty[String]
 
     val segments = 0 until Segments
     val scanConfigs = segments.map(idx => {
@@ -93,17 +74,24 @@ object DynamoScannerRDD extends BaseScanner
         maybeRegion = maybeRegion,
         maybeEndpoint = maybeEndpoint)
     })
-/*
-    val Table = getTable()
-    val tableDesc = Table.describe()
-
-    log.info(s"Table ${tableDesc.getTableName} contains ${tableDesc.getItemCount} items " +
-      s"using ${tableDesc.getTableSizeBytes} bytes.")
-
-    log.info(s"Schema for tableName ${tableDesc.getTableName}: $schema")
-*/
     spark.sparkContext.parallelize(scanConfigs, scanConfigs.length)
       .flatMap(scan)
+  }
+
+  // Infer schema with JSONRelation for simplicity.
+    def getSchema(spark: SparkSession,pageSize: Int, tableName: String,
+                  maybeCredentials: Option[String] = None,
+                  awsAccessKey: Option[String] = None, awsSecretKey: Option[String] = None,
+                  maybeRegion: Option[String] = None, maybeEndpoint: Option[String] = None): StructType = {
+        val scanSpec = new ScanSpec().withMaxPageSize(pageSize)
+        val Table = getTable(
+          tableName, maybeCredentials, awsAccessKey, awsSecretKey, maybeRegion, maybeEndpoint)
+        val result = Table.scan(scanSpec)
+        val json = result.firstPage().iterator().map(_.toJSON)
+        import spark.implicits._  // scalastyle:ignore
+        val jsonDS = spark.sparkContext.parallelize(json.toSeq).toDS()
+        val jsonDF = spark.read.json(jsonDS)
+        jsonDF.schema
   }
 
   def scan(config: ScanConfig): Iterator[Row] = {

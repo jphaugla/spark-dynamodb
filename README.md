@@ -165,6 +165,9 @@ use this mvn command
 ```bash
 mvn install -DskipTests -Dgpg.skip
 ```
+Added DynamoToCassandra.scala program to fully copy a DyanamoDB table
+to a Cassandra table when passed the DynamaDB table name.  A runscript
+is also added.
 
 Can test spark shell using jar-with-dependencies file using spark 2.4.0
 
