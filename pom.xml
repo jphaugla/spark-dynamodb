@@ -28,6 +28,9 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <java.version>1.8</java.version>
+    <connector.version>2.4.0</connector.version>
+    <cassandra.version>3.2</cassandra.version>
+    <scala.main.version>2.11</scala.main.version>
   </properties>
 
   <scm>
@@ -138,7 +141,7 @@
         <version>0.8.0</version>
         <configuration>
           <verbose>true</verbose>
-          <failOnViolation>true</failOnViolation>
+          <failOnViolation>false</failOnViolation>
           <includeTestSourceDirectory>true</includeTestSourceDirectory>
           <failOnWarning>false</failOnWarning>
           <sourceDirectory>${basedir}/src/main/scala</sourceDirectory>
@@ -306,6 +309,25 @@
       <artifactId>scalatest_2.11</artifactId>
       <version>3.0.5</version>
       <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.datastax.spark</groupId>
+      <artifactId>spark-cassandra-connector_${scala.main.version}</artifactId>
+      <version>${connector.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.cassandra</groupId>
+      <artifactId>cassandra-all</artifactId>
+      <version>${cassandra.version}</version>
+      <scope>test</scope>
+      <exclusions>
+        <!-- Excluded to allow for Cassandra to run embedded -->
+        <exclusion>
+          <groupId>org.slf4j</groupId>
+          <artifactId>log4j-over-slf4j</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
   </dependencies>
 </project>

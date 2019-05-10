@@ -6,7 +6,8 @@ import com.amazonaws.services.dynamodbv2.document.spec.ScanSpec
 import com.google.common.util.concurrent.RateLimiter
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.Row
-import org.apache.spark.sql.SQLContext
+import org.apache.spark.SparkContext
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.sources.BaseRelation
 import org.apache.spark.sql.sources.PrunedScan
 import org.apache.spark.sql.types.StructType
@@ -30,50 +31,51 @@ import scala.util.control.NonFatal
   * @param maybeEndpoint    Endpoint to connect to DynamoDB on. This is intended for tests.
   * @see http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/QueryAndScanGuidelines.html
   */
-private[dynamodb] case class DynamoDBRelation(
-  tableName: String,
-  maybeFilterExpression: Option[String],
-  maybePageSize: Option[String],
-  maybeSegments: Option[String],
-  maybeRateLimit: Option[Int],
-  maybeRegion: Option[String],
-  maybeSchema: Option[StructType],
-  maybeCredentials: Option[String] = None,
-  awsAccessKey: Option[String] = None,
-  awsSecretKey: Option[String] = None,
-  maybeEndpoint: Option[String])
-  (@transient val sqlContext: SQLContext)
-  extends BaseRelation with PrunedScan with BaseScanner {
+object DynamoScannerRDD extends BaseScanner
+{
 
   private val log = LoggerFactory.getLogger(this.getClass)
-
-  @transient private lazy val Table = getTable(
-    tableName, maybeCredentials, awsAccessKey, awsSecretKey, maybeRegion, maybeEndpoint)
-
-  private val pageSize = Integer.parseInt(maybePageSize.getOrElse("1000"))
-
-  private val Segments = Integer.parseInt(maybeSegments.getOrElse("1"))
-
+  // (@transient val sqlContext: SQLContext)
   // Infer schema with JSONRelation for simplicity. A future improvement would be
   // directly processing the scan result set.
-  private val TableSchema = maybeSchema.getOrElse({
-    val scanSpec = new ScanSpec().withMaxPageSize(pageSize)
-    val result = Table.scan(scanSpec)
-    val json = result.firstPage().iterator().map(_.toJSON)
-    import sqlContext.implicits._  // scalastyle:ignore
-    val jsonDS = sqlContext.sparkContext.parallelize(json.toSeq).toDS()
-    val jsonDF = sqlContext.read.json(jsonDS)
-    jsonDF.schema
-  })
+
+
+
 
   /** Get the relation schema.
     *
     * The user-defined schema will be used, if provided. Otherwise the schema is inferred
     * from one page of items scanned from the DynamoDB tableName.
     */
-  override def schema: StructType = TableSchema
 
-  override def buildScan(requiredColumns: Array[String]): RDD[Row] = {
+  def apply(   spark: SparkSession,
+               tableName: String,
+                     maybeFilterExpression: Option[String],
+                     maybePageSize: Option[String],
+                     maybeSegments: Option[String],
+                     maybeRateLimit: Option[Int],
+                     maybeRegion: Option[String],
+                     maybeSchema: Option[StructType],
+                     maybeCredentials: Option[String] = None,
+                     awsAccessKey: Option[String] = None,
+                     awsSecretKey: Option[String] = None,
+                     maybeEndpoint: Option[String]): RDD[Row] = {
+
+    val pageSize = Integer.parseInt(maybePageSize.getOrElse("1000"))
+
+    val Segments = Integer.parseInt(maybeSegments.getOrElse("1"))
+
+    val emptyArray =  Array.empty[String]
+
+    /* val scanSpec = new ScanSpec().withMaxPageSize(pageSize)
+    val result = Table.scan(scanSpec)
+    val json = result.firstPage().iterator().map(_.toJSON)
+    import sc.sqlContext.implicits._  // scalastyle:ignore
+    val jsonDS = sc.sqlContext.sparkContext.parallelize(json.toSeq).toDS()
+    val jsonDF = sc.sqlContext.read.json(jsonDS)
+    val schema = jsonDF.schema
+    */
+
     val segments = 0 until Segments
     val scanConfigs = segments.map(idx => {
       ScanConfig(
@@ -81,8 +83,8 @@ private[dynamodb] case class DynamoDBRelation(
         segment = idx,
         totalSegments = segments.length,
         pageSize = pageSize,
-        maybeSchema = Some(schema),
-        maybeRequiredColumns = Some(requiredColumns),
+        maybeSchema = maybeSchema,
+        maybeRequiredColumns = Some(emptyArray),
         maybeFilterExpression = maybeFilterExpression,
         maybeRateLimit = maybeRateLimit,
         maybeCredentials = maybeCredentials,
@@ -91,16 +93,16 @@ private[dynamodb] case class DynamoDBRelation(
         maybeRegion = maybeRegion,
         maybeEndpoint = maybeEndpoint)
     })
-
+/*
+    val Table = getTable()
     val tableDesc = Table.describe()
 
     log.info(s"Table ${tableDesc.getTableName} contains ${tableDesc.getItemCount} items " +
       s"using ${tableDesc.getTableSizeBytes} bytes.")
 
     log.info(s"Schema for tableName ${tableDesc.getTableName}: $schema")
-
-    sqlContext.sparkContext
-      .parallelize(scanConfigs, scanConfigs.length)
+*/
+    spark.sparkContext.parallelize(scanConfigs, scanConfigs.length)
       .flatMap(scan)
   }
 
@@ -120,6 +122,8 @@ private[dynamodb] case class DynamoDBRelation(
       // This result set resides in local memory.
       val rows = page.iterator().flatMap(item => {
         try {
+   //       log.info(s"This is before call to ItemConverter ${item.toJSON}")
+     //     log.info(s"Another line of output")
           Some(ItemConverter.toRow(item, config.maybeSchema.get))
         } catch {
           case NonFatal(err) =>
@@ -134,8 +138,8 @@ private[dynamodb] case class DynamoDBRelation(
       // Blocks until rate limit is available.
       maybeRateLimiter.foreach(rateLimiter => {
         // DynamoDBLocal.jar does not implement consumed capacity
-        val maybeConsumedCapacityUnits = Option(page.getLowLevelResult
-          .getScanResult.getConsumedCapacity)
+        val maybeConsumedCapacityUnits =
+          Option(page.getLowLevelResult.getScanResult.getConsumedCapacity)
           .map(_.getCapacityUnits)
           .map(math.ceil(_).toInt)
 

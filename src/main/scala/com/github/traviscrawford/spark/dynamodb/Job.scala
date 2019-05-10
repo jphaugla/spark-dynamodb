@@ -5,6 +5,8 @@ import com.twitter.app.FlagUsageError
 import com.twitter.app.Flags
 import org.apache.spark.SparkConf
 import org.apache.spark.SparkContext
+
+import org.apache.spark.sql.SparkSession
 import org.slf4j.LoggerFactory
 
 /** Base class for Spark jobs. */
@@ -15,9 +17,13 @@ trait Job {
   protected val flag: Flags =
     new Flags(this.getClass.getName, includeGlobal = true, failFastUntilParsed = true)
 
-  lazy val conf = new SparkConf().setAppName(getClass.getName)
-  lazy implicit val sc = SparkContext.getOrCreate(conf)
-
+// Create a SparkSession. No need to create SparkContext
+// You automatically get it as part of the SparkSession
+  lazy implicit val spark = SparkSession
+   .builder()
+   .appName(getClass.getName)
+   .enableHiveSupport()
+   .getOrCreate()
   /** Users should override this method with their Spark job logic. */
   def run(): Unit
 
@@ -31,7 +37,7 @@ trait Job {
     try {
       run()
     } finally {
-      sc.stop()
+      spark.stop()
     }
   }
 }

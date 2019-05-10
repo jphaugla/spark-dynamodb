@@ -1,7 +1,7 @@
 package com.github.traviscrawford.spark.dynamodb
 
 import com.google.common.util.concurrent.RateLimiter
-import org.apache.spark.SparkContext
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.rdd.RDD
 import org.slf4j.LoggerFactory
 
@@ -18,7 +18,7 @@ object DynamoScanner extends BaseScanner {
   private val log = LoggerFactory.getLogger(this.getClass)
 
   def apply(
-    sc: SparkContext,
+    spark: SparkSession,
     table: String,
     totalSegments: Int,
     pageSize: Int,
@@ -45,7 +45,7 @@ object DynamoScanner extends BaseScanner {
         maybeEndpoint = maybeEndpoint)
     })
 
-    sc.parallelize(scanConfigs, scanConfigs.length).flatMap(scan)
+    spark.sparkContext.parallelize(scanConfigs, scanConfigs.length).flatMap(scan)
   }
 
   private def scan(config: ScanConfig): Iterator[String] = {

@@ -2,7 +2,7 @@ package com.github.traviscrawford.spark.dynamodb
 
 class DynamoScannerIntegrationSpec extends BaseIntegrationSpec {
   "DynamoBackupJob" should "scan a table" in {
-    val items = DynamoScanner(spark.sparkContext,
+    val items = DynamoScanner(spark,
       table = TestUsersTableName,
       totalSegments = 1,
       pageSize = 1000,

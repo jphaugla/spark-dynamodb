@@ -36,13 +36,14 @@ object DynamoBackupJob extends Job {
     val awsSecretKey = None
     if (overwrite()) deleteOutputPath(output())
 
-    DynamoScanner(sc, table(), totalSegments(), pageSize(),
-      maybeCredentials, awsAccessKey, awsSecretKey, maybeRateLimit, maybeRegion).saveAsTextFile(output())
+    DynamoScanner(spark, table(), totalSegments(), pageSize(),
+      maybeCredentials, awsAccessKey, awsSecretKey, maybeRateLimit,
+      maybeRegion).saveAsTextFile(output())
   }
 
   private def deleteOutputPath(output: String): Unit = {
     log.info(s"Deleting existing output path $output")
-    FileSystem.get(new URI(output), sc.hadoopConfiguration)
+    FileSystem.get(new URI(output), spark.sparkContext.hadoopConfiguration)
       .delete(new Path(output), true)
   }
 }
