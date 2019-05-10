@@ -1,0 +1,1 @@
+~/datastax/spark-2.4.0-bin-hadoop2.7/bin/spark-submit --conf spark.cassandra.connection.host=127.0.0.1 --class com.github.traviscrawford.spark.dynamodb.DynamoToCassandra   --packages datastax:spark-cassandra-connector:2.4.0-s_2.11 ./target/spark-dynamodb-0.0.14-SNAPSHOT-jar-with-dependencies.jar  -table test 
